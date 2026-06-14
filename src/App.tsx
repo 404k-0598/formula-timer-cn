@@ -248,6 +248,11 @@ function shortSessionName(session?: Session) {
   return sessionName(session).split(' ').at(-1) ?? session.session_name
 }
 
+function sessionTitle(session?: Session) {
+  if (!session) return '等待数据'
+  return `${session.location} ${shortSessionName(session)}`
+}
+
 function statusLabel(mode: DashboardState['mode']) {
   if (mode === 'live') return '实时'
   if (mode === 'waiting') return '等待开赛'
@@ -266,6 +271,26 @@ function compoundShort(compound?: string) {
     WET: 'W',
   }
   return map[compound] ?? compound.slice(0, 1)
+}
+
+function flagLabel(value?: string | null) {
+  if (!value) return '--'
+  const map: Record<string, string> = {
+    CLEAR: '清除',
+    GREEN: '绿旗',
+    YELLOW: '黄旗',
+    RED: '红旗',
+    BLUE: '蓝旗',
+    CHEQUERED: '方格旗',
+    BLACK: '黑旗',
+    SAFETY_CAR: '安全车',
+    VSC: '虚拟安全车',
+    Other: '其他',
+    FLAG: '旗语',
+    CAR_EVENT: '赛车事件',
+    DRIVERS: '车手',
+  }
+  return map[value] ?? value
 }
 
 function segmentClass(code: number | null) {
@@ -477,7 +502,7 @@ function App() {
           <div className="panel-head">
             <div>
               <span>实时计时</span>
-              <h2>{state.dataSession ? `${state.dataSession.location} ${state.dataSession.session_name}` : '等待数据'}</h2>
+              <h2>{sessionTitle(state.dataSession)}</h2>
             </div>
             <div className="panel-actions">
               <span><Activity size={14} /> {state.rows.length} 位车手</span>
@@ -524,7 +549,7 @@ function TimingTable({ rows }: { rows: Row[] }) {
         <span>速度</span>
         <span>最佳/上一圈</span>
         <span>差距</span>
-        <span>Mini sectors</span>
+        <span>微分段</span>
         <span>轮胎</span>
       </div>
       {rows.length === 0 ? (
@@ -668,7 +693,7 @@ function RaceControlPanel({ messages }: { messages: RaceControl[] }) {
         {messages.map((message) => (
           <article key={`${message.date}-${message.message}`}>
             <span>{formatTime(message.date)}</span>
-            <strong>{message.flag ?? message.category}</strong>
+            <strong>{flagLabel(message.flag ?? message.category)}</strong>
             <p>{message.message}</p>
           </article>
         ))}
@@ -705,7 +730,7 @@ function LapChart({ rows }: { rows: Row[] }) {
     <section className="analysis-panel">
       <div className="panel-head compact">
         <span><BarChart3 size={15} /> 最快圈速</span>
-        <small>Top 10</small>
+        <small>前 10</small>
       </div>
       <div className="lap-bars">
         {visible.map((row) => {
@@ -728,7 +753,7 @@ function TyrePanel({ rows }: { rows: Row[] }) {
     <section className="analysis-panel">
       <div className="panel-head compact">
         <span><Settings2 size={15} /> 轮胎策略</span>
-        <small>真实 stints</small>
+        <small>真实换胎段</small>
       </div>
       <div className="tyre-grid">
         {rows.slice(0, 12).map((row) => (
