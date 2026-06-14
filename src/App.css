@@ -651,6 +651,20 @@
   color: #fff;
 }
 
+.empty-state span {
+  max-width: 560px;
+  padding: 0 18px;
+  line-height: 1.6;
+}
+
+.error-state {
+  color: #e5e7eb;
+}
+
+.error-state svg {
+  color: #f4c542;
+}
+
 @media (max-width: 1180px) {
   .workspace,
   .analysis-row {

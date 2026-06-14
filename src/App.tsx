@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   CloudSun,
   Flag,
@@ -22,6 +23,8 @@ const REFRESH_MS = 30000
 const API_STEP_MS = 1000
 const TRACK_SAMPLE_MS = 120000
 const TRACK_CACHE_VERSION = 'track-v4'
+const OPENF1_RESTRICTED_MESSAGE = 'OpenF1 正在进行实时 F1 会话，未认证公共访问被限制；需要 OpenF1 订阅/API key 才能显示实时数据。'
+const OPENF1_BROWSER_BLOCKED_MESSAGE = 'OpenF1 公共接口当前无法从浏览器访问；直播会话期间通常会被认证/CORS 限制，需要后端代理接入 API key。'
 
 type Session = {
   session_key: number
@@ -146,7 +149,7 @@ type TrackTelemetry = {
 }
 
 type DashboardState = {
-  mode: 'loading' | 'live' | 'waiting' | 'replay' | 'error'
+  mode: 'loading' | 'live' | 'waiting' | 'replay' | 'restricted' | 'error'
   targetSession?: Session
   dataSession?: Session
   nextSession?: Session
@@ -158,6 +161,27 @@ type DashboardState = {
   weather?: Weather
   updatedAt?: string
   error?: string
+}
+
+class OpenF1ApiError extends Error {
+  restricted: boolean
+
+  constructor(message: string, restricted = false) {
+    super(message)
+    this.name = 'OpenF1ApiError'
+    this.restricted = restricted
+  }
+}
+
+function isOpenF1Detail(payload: unknown): payload is { detail: string } {
+  return typeof payload === 'object'
+    && payload !== null
+    && 'detail' in payload
+    && typeof (payload as { detail?: unknown }).detail === 'string'
+}
+
+function isRestrictedDetail(detail: string) {
+  return /live f1 session|restricted|authenticated|api key|subscription/i.test(detail)
 }
 
 const initialState: DashboardState = {
@@ -187,14 +211,23 @@ function endpoint(path: string, params: Record<string, string | number | undefin
 }
 
 async function fetchJson<T>(path: string, params: Record<string, string | number | undefined>, attempt = 0): Promise<T> {
-  const response = await fetch(endpoint(path, params))
+  let response: Response
+  try {
+    response = await fetch(endpoint(path, params))
+  } catch (error) {
+    if (error instanceof TypeError) throw new OpenF1ApiError(OPENF1_BROWSER_BLOCKED_MESSAGE, true)
+    throw error
+  }
   if (response.status === 429 && attempt < 2) {
     await wait(2500 * (attempt + 1))
     return fetchJson<T>(path, params, attempt + 1)
   }
   if (!response.ok) throw new Error(`${path} ${response.status}`)
   const payload = await response.json()
-  if (payload?.detail) return [] as T
+  if (isOpenF1Detail(payload)) {
+    const restricted = isRestrictedDetail(payload.detail)
+    throw new OpenF1ApiError(restricted ? OPENF1_RESTRICTED_MESSAGE : `OpenF1 返回错误：${payload.detail}`, restricted)
+  }
   return payload as T
 }
 
@@ -283,6 +316,7 @@ function statusLabel(mode: DashboardState['mode']) {
   if (mode === 'live') return '实时'
   if (mode === 'waiting') return '等待开赛'
   if (mode === 'replay') return '最近真实数据'
+  if (mode === 'restricted') return '实时受限'
   if (mode === 'error') return '数据错误'
   return '载入中'
 }
@@ -597,9 +631,10 @@ function useDashboard() {
       const next = await loadDashboard()
       setState(next)
     } catch (error) {
-      setState((current) => ({
-        ...current,
-        mode: 'error',
+      const restricted = error instanceof OpenF1ApiError && error.restricted
+      setState(() => ({
+        ...initialState,
+        mode: restricted ? 'restricted' : 'error',
         error: error instanceof Error ? error.message : '未知错误',
         updatedAt: new Date().toISOString(),
       }))
@@ -681,7 +716,7 @@ function App() {
               <span><Gauge size={14} /> {fastest?.driver.name_acronym ?? '--'} 最快</span>
             </div>
           </div>
-          <TimingTable rows={state.rows} />
+          <TimingTable rows={state.rows} mode={state.mode} error={state.error} />
         </section>
 
         <aside className="side-column">
@@ -710,7 +745,9 @@ function StatusCard({ label, value, detail, accent }: { label: string; value: st
   )
 }
 
-function TimingTable({ rows }: { rows: Row[] }) {
+function TimingTable({ rows, mode, error }: { rows: Row[]; mode: DashboardState['mode']; error?: string }) {
+  const blocked = mode === 'restricted' || mode === 'error'
+
   return (
     <div className="timing-table">
       <div className="table-head">
@@ -725,10 +762,10 @@ function TimingTable({ rows }: { rows: Row[] }) {
         <span>轮胎</span>
       </div>
       {rows.length === 0 ? (
-        <div className="empty-state">
-          <Timer size={22} />
-          <strong>当前会话还没有遥测数据</strong>
-          <span>如果正赛尚未开始，这里会先显示最近真实会话；会话开始后自动切到实时数据。</span>
+        <div className={blocked ? 'empty-state error-state' : 'empty-state'}>
+          {blocked ? <AlertTriangle size={22} /> : <Timer size={22} />}
+          <strong>{blocked ? (mode === 'restricted' ? 'OpenF1 实时访问受限' : '数据加载失败') : '当前会话还没有遥测数据'}</strong>
+          <span>{blocked ? error : '如果正赛尚未开始，这里会先显示最近真实会话；会话开始后自动切到实时数据。'}</span>
         </div>
       ) : (
         rows.map((row) => <TimingRow row={row} key={row.driver.driver_number} />)
