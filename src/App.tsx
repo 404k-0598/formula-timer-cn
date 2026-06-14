@@ -27,6 +27,9 @@ const TRACK_SAMPLE_MS = 120000
 const TRACK_CACHE_VERSION = 'track-v4'
 const OPENF1_RESTRICTED_MESSAGE = 'OpenF1 正在进行实时 F1 会话，未认证公共访问被限制；需要 OpenF1 订阅/API key 才能显示实时数据。'
 const OPENF1_BROWSER_BLOCKED_MESSAGE = 'OpenF1 公共接口当前无法从浏览器访问；直播会话期间通常会被认证/CORS 限制，需要后端代理接入 API key。'
+const STATIC_TRACK_URLS = {
+  catalunya: `${import.meta.env.BASE_URL}tracks/catalunya-2026.json`,
+} as const
 
 type Session = {
   session_key: number
@@ -165,6 +168,8 @@ type DashboardState = {
   error?: string
   sourceLabel?: string
 }
+
+const staticTrackCache = new Map<string, Promise<Partial<TrackTelemetry> | undefined>>()
 
 class OpenF1ApiError extends Error {
   restricted: boolean
@@ -450,14 +455,16 @@ function buildTrackSegments(points: LocationData[]) {
 
   for (const [driverNumber, driverPoints] of byDriver) {
     const sorted = [...driverPoints].sort((a, b) => a.date.localeCompare(b.date))
-    const xs = sorted.map((point) => point.x)
-    const ys = sorted.map((point) => point.y)
+    const nonZero = sorted.filter((point) => point.x !== 0 || point.y !== 0)
+    if (nonZero.length < 8) continue
+    const xs = nonZero.map((point) => point.x)
+    const ys = nonZero.map((point) => point.y)
     const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))
-    const score = sorted.length + area / 15000
+    const score = nonZero.length + area / 15000
     if (score > bestScore) {
       bestScore = score
       selectedDriver = driverNumber
-      selectedPoints = sorted
+      selectedPoints = nonZero
     }
   }
 
@@ -465,7 +472,7 @@ function buildTrackSegments(points: LocationData[]) {
   let segment: LocationData[] = []
   for (const point of selectedPoints) {
     const previous = segment.at(-1)
-    if (previous && distance(previous, point) > 2300) {
+    if (previous && distance(previous, point) > 6000) {
       if (segment.length >= 3) segments.push(simplifyPath(segment))
       segment = []
     }
@@ -477,7 +484,7 @@ function buildTrackSegments(points: LocationData[]) {
 }
 
 function buildTrackTelemetry(points: LocationData[], from?: string, to?: string): TrackTelemetry {
-  const clean = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+  const clean = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && (point.x !== 0 || point.y !== 0))
   const cloud = spatialSample(clean)
   const { segments, selectedDriver } = buildTrackSegments(clean)
   return {
@@ -490,6 +497,76 @@ function buildTrackTelemetry(points: LocationData[], from?: string, to?: string)
     from,
     to,
   }
+}
+
+function repairProxyTrack(track: TrackTelemetry): TrackTelemetry {
+  if (track.segments.length || !track.cloud.length) return track
+  const { segments, selectedDriver } = buildTrackSegments(track.cloud)
+  if (!segments.length) return track
+  return {
+    ...track,
+    segments,
+    sampledCount: track.cloud.length + segments.reduce((sum, segment) => sum + segment.length, 0),
+    driverNumber: selectedDriver ?? track.driverNumber,
+  }
+}
+
+function staticTrackUrl(state: DashboardState) {
+  const labels = [
+    state.targetSession?.circuit_short_name,
+    state.dataSession?.circuit_short_name,
+    state.targetSession?.location,
+    state.dataSession?.location,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (labels.includes('catalunya') || labels.includes('barcelona')) return STATIC_TRACK_URLS.catalunya
+  return undefined
+}
+
+async function loadStaticTrack(state: DashboardState) {
+  const url = staticTrackUrl(state)
+  if (!url) return undefined
+  const cached = staticTrackCache.get(url)
+  if (cached) return cached
+
+  const request = (async () => {
+    try {
+      const response = await fetch(url, { cache: 'force-cache' })
+      if (!response.ok) return undefined
+      const track = await response.json() as Partial<TrackTelemetry>
+      if (!Array.isArray(track.segments) || !track.segments.length) return undefined
+      return track
+    } catch {
+      return undefined
+    }
+  })()
+
+  staticTrackCache.set(url, request)
+  return request
+}
+
+async function repairLiveTrackState(state: DashboardState): Promise<DashboardState> {
+  if (state.track.segments.length) return state
+
+  const staticTrack = await loadStaticTrack(state)
+  if (staticTrack?.segments?.length) {
+    const segmentPoints = staticTrack.segments.reduce((sum, segment) => sum + segment.length, 0)
+    return {
+      ...state,
+      track: {
+        ...state.track,
+        segments: staticTrack.segments,
+        sourceCount: Math.max(state.track.sourceCount, staticTrack.sourceCount ?? 0),
+        sampledCount: state.track.cloud.length + segmentPoints,
+        driverNumber: staticTrack.driverNumber ?? state.track.driverNumber,
+        from: state.track.from ?? staticTrack.from,
+        to: state.track.to ?? staticTrack.to,
+      },
+    }
+  }
+
+  const repairedTrack = repairProxyTrack(state.track)
+  return repairedTrack === state.track ? state : { ...state, track: repairedTrack }
 }
 
 function trackCacheKey(session: Session) {
@@ -546,7 +623,7 @@ async function loadLiveProxyDashboard() {
     if (!response.ok) return undefined
     const payload = await response.json() as Partial<DashboardState>
     const state = normalizeProxyState(payload)
-    if (state.rows.length || state.dataSession || state.sourceLabel) return state
+    if (state.rows.length || state.dataSession || state.sourceLabel) return repairLiveTrackState(state)
   } catch {
     return undefined
   }
@@ -683,10 +760,10 @@ function useDashboard() {
 
   useEffect(() => {
     const events = new EventSource(`${LIVE_API}/api/events`)
-    events.onmessage = (event) => {
+    events.onmessage = async (event) => {
       try {
         const next = normalizeProxyState(JSON.parse(event.data) as Partial<DashboardState>)
-        if (next.rows.length || next.dataSession) setState(next)
+        if (next.rows.length || next.dataSession) setState(await repairLiveTrackState(next))
       } catch {
         // Ignore malformed keepalive or transient proxy frames.
       }
