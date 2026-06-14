@@ -18,7 +18,10 @@ import './App.css'
 
 const API = 'https://api.openf1.org/v1'
 const CURRENT_YEAR = new Date().getUTCFullYear()
-const REFRESH_MS = 20000
+const REFRESH_MS = 30000
+const API_STEP_MS = 700
+const TRACK_SAMPLE_MS = 120000
+const TRACK_CACHE_VERSION = 'track-v4'
 
 type Session = {
   session_key: number
@@ -131,6 +134,17 @@ type Row = {
   sectors: Array<number | null>
 }
 
+type TrackTelemetry = {
+  cloud: LocationData[]
+  segments: LocationData[][]
+  latest: LocationData[]
+  sourceCount: number
+  sampledCount: number
+  driverNumber?: number
+  from?: string
+  to?: string
+}
+
 type DashboardState = {
   mode: 'loading' | 'live' | 'waiting' | 'replay' | 'error'
   targetSession?: Session
@@ -138,6 +152,7 @@ type DashboardState = {
   nextSession?: Session
   rows: Row[]
   locations: LocationData[]
+  track: TrackTelemetry
   raceControl: RaceControl[]
   teamRadio: TeamRadio[]
   weather?: Weather
@@ -149,6 +164,13 @@ const initialState: DashboardState = {
   mode: 'loading',
   rows: [],
   locations: [],
+  track: {
+    cloud: [],
+    segments: [],
+    latest: [],
+    sourceCount: 0,
+    sampledCount: 0,
+  },
   raceControl: [],
   teamRadio: [],
 }
@@ -164,8 +186,12 @@ function endpoint(path: string, params: Record<string, string | number | undefin
   return `${API}/${path}?${query}`
 }
 
-async function fetchJson<T>(path: string, params: Record<string, string | number | undefined>) {
+async function fetchJson<T>(path: string, params: Record<string, string | number | undefined>, attempt = 0): Promise<T> {
   const response = await fetch(endpoint(path, params))
+  if (response.status === 429 && attempt < 1) {
+    await wait(1400)
+    return fetchJson<T>(path, params, attempt + 1)
+  }
   if (!response.ok) throw new Error(`${path} ${response.status}`)
   const payload = await response.json()
   if (payload?.detail) return [] as T
@@ -273,6 +299,18 @@ function compoundShort(compound?: string) {
   return map[compound] ?? compound.slice(0, 1)
 }
 
+function compoundLabel(compound?: string) {
+  if (!compound) return '--'
+  const map: Record<string, string> = {
+    SOFT: '软胎',
+    MEDIUM: '中性胎',
+    HARD: '硬胎',
+    INTERMEDIATE: '半雨胎',
+    WET: '雨胎',
+  }
+  return map[compound] ?? compound
+}
+
 function flagLabel(value?: string | null) {
   if (!value) return '--'
   const map: Record<string, string> = {
@@ -317,8 +355,137 @@ function latestWindow(session: Session, mode: 'live' | 'replay') {
   }
 }
 
+function trackWindow(session: Session, mode: 'live' | 'replay') {
+  const start = new Date(session.date_start)
+  const end = new Date(session.date_end)
+  const now = new Date()
+  const from = start
+  const targetTo = mode === 'live' ? new Date(Math.min(now.getTime(), end.getTime())) : end
+  const to = new Date(Math.min(targetTo.getTime(), start.getTime() + TRACK_SAMPLE_MS))
+  return { from: toOpenF1Date(from), to: toOpenF1Date(to), complete: to.getTime() - from.getTime() >= TRACK_SAMPLE_MS * 0.85 }
+}
+
 function toOpenF1Date(date: Date) {
   return date.toISOString().slice(0, 19)
+}
+
+function distance(a: LocationData, b: LocationData) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function spatialSample(points: LocationData[], maxPoints = 900) {
+  const grid = new Map<string, LocationData>()
+  for (const point of points) {
+    const key = `${Math.round(point.x / 95)}:${Math.round(point.y / 95)}`
+    if (!grid.has(key)) grid.set(key, point)
+  }
+
+  const sampled = Array.from(grid.values())
+  if (sampled.length <= maxPoints) return sampled
+  const stride = Math.ceil(sampled.length / maxPoints)
+  return sampled.filter((_, index) => index % stride === 0).slice(0, maxPoints)
+}
+
+function simplifyPath(points: LocationData[], minStep = 70, maxPoints = 340) {
+  const simplified: LocationData[] = []
+  for (const point of points) {
+    const previous = simplified.at(-1)
+    if (!previous || distance(previous, point) >= minStep) simplified.push(point)
+  }
+
+  const source = simplified.length >= 3 ? simplified : points
+  if (source.length <= maxPoints) return source
+  const stride = Math.ceil(source.length / maxPoints)
+  return source.filter((_, index) => index % stride === 0)
+}
+
+function buildTrackSegments(points: LocationData[]) {
+  const byDriver = new Map<number, LocationData[]>()
+  for (const point of points) {
+    const bucket = byDriver.get(point.driver_number) ?? []
+    bucket.push(point)
+    byDriver.set(point.driver_number, bucket)
+  }
+
+  let selectedDriver: number | undefined
+  let selectedPoints: LocationData[] = []
+  let bestScore = Number.NEGATIVE_INFINITY
+
+  for (const [driverNumber, driverPoints] of byDriver) {
+    const sorted = [...driverPoints].sort((a, b) => a.date.localeCompare(b.date))
+    const xs = sorted.map((point) => point.x)
+    const ys = sorted.map((point) => point.y)
+    const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))
+    const score = sorted.length + area / 15000
+    if (score > bestScore) {
+      bestScore = score
+      selectedDriver = driverNumber
+      selectedPoints = sorted
+    }
+  }
+
+  const segments: LocationData[][] = []
+  let segment: LocationData[] = []
+  for (const point of selectedPoints) {
+    const previous = segment.at(-1)
+    if (previous && distance(previous, point) > 2300) {
+      if (segment.length >= 3) segments.push(simplifyPath(segment))
+      segment = []
+    }
+    segment.push(point)
+  }
+  if (segment.length >= 3) segments.push(simplifyPath(segment))
+
+  return { segments, selectedDriver }
+}
+
+function buildTrackTelemetry(points: LocationData[], from?: string, to?: string): TrackTelemetry {
+  const clean = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+  const cloud = spatialSample(clean)
+  const { segments, selectedDriver } = buildTrackSegments(clean)
+  return {
+    cloud,
+    segments,
+    latest: Array.from(byLatestDate(clean).values()),
+    sourceCount: clean.length,
+    sampledCount: cloud.length + segments.reduce((sum, segment) => sum + segment.length, 0),
+    driverNumber: selectedDriver,
+    from,
+    to,
+  }
+}
+
+function trackCacheKey(session: Session) {
+  return `${TRACK_CACHE_VERSION}:${session.session_key}`
+}
+
+function readCachedTrack(session: Session) {
+  try {
+    const value = window.sessionStorage.getItem(trackCacheKey(session))
+    if (!value) return undefined
+    return JSON.parse(value) as TrackTelemetry
+  } catch {
+    return undefined
+  }
+}
+
+function writeCachedTrack(session: Session, track: TrackTelemetry) {
+  try {
+    window.sessionStorage.setItem(trackCacheKey(session), JSON.stringify(track))
+  } catch {
+    // Storage can be unavailable in private browsing; the map still works without cache.
+  }
+}
+
+async function loadTrackTelemetry(session: Session, mode: 'live' | 'replay') {
+  const cached = readCachedTrack(session)
+  if (cached?.sourceCount) return cached
+
+  const window = trackWindow(session, mode)
+  const points = await fetchArray<LocationData>('location', { session_key: session.session_key, 'date>=': window.from, 'date<=': window.to })
+  const track = buildTrackTelemetry(points, window.from, window.to)
+  if (window.complete && track.sourceCount) writeCachedTrack(session, track)
+  return track
 }
 
 function chooseSessions(sessions: Session[], now = new Date()) {
@@ -353,19 +520,23 @@ async function loadDashboard(): Promise<DashboardState> {
 
   const drivers = await fetchJson<Driver[]>('drivers', { session_key: dataSession.session_key })
   const carData = await fetchArray<CarData>('car_data', { session_key: dataSession.session_key, 'date>=': window.from, 'date<=': window.to })
-  await wait(140)
-  const locations = await fetchArray<LocationData>('location', { session_key: dataSession.session_key, 'date>=': window.from, 'date<=': window.to })
-  await wait(140)
+  await wait(API_STEP_MS)
+  const track = await loadTrackTelemetry(dataSession, dataMode)
+  await wait(API_STEP_MS)
+  const locations = dataMode === 'live'
+    ? await fetchArray<LocationData>('location', { session_key: dataSession.session_key, 'date>=': window.from, 'date<=': window.to })
+    : track.latest
+  await wait(API_STEP_MS)
   const positions = await fetchArray<PositionData>('position', { session_key: dataSession.session_key })
-  await wait(140)
+  await wait(API_STEP_MS)
   const laps = await fetchArray<LapData>('laps', { session_key: dataSession.session_key })
-  await wait(140)
+  await wait(API_STEP_MS)
   const stints = await fetchArray<StintData>('stints', { session_key: dataSession.session_key })
-  await wait(140)
+  await wait(API_STEP_MS)
   const raceControl = await fetchArray<RaceControl>('race_control', { session_key: dataSession.session_key })
-  await wait(140)
+  await wait(API_STEP_MS)
   const teamRadio = await fetchArray<TeamRadio>('team_radio', { session_key: dataSession.session_key })
-  await wait(140)
+  await wait(API_STEP_MS)
   const weather = await fetchArray<Weather>('weather', { session_key: dataSession.session_key })
 
   const carByDriver = byLatestDate(carData)
@@ -409,6 +580,7 @@ async function loadDashboard(): Promise<DashboardState> {
     nextSession: next,
     rows,
     locations,
+    track,
     raceControl: raceControl.slice(-8).reverse(),
     teamRadio: teamRadio.slice(-8).reverse(),
     weather: weather.at(-1),
@@ -513,7 +685,7 @@ function App() {
         </section>
 
         <aside className="side-column">
-          <TrackMap rows={state.rows} />
+          <TrackMap rows={state.rows} track={state.track} />
           <WeatherPanel weather={state.weather} />
           <RaceControlPanel messages={state.raceControl} />
           <TeamRadioPanel radios={state.teamRadio} rows={state.rows} />
@@ -544,7 +716,7 @@ function TimingTable({ rows }: { rows: Row[] }) {
       <div className="table-head">
         <span>排名</span>
         <span>车手</span>
-        <span>DRS</span>
+        <span>尾翼</span>
         <span>遥测</span>
         <span>速度</span>
         <span>最佳/上一圈</span>
@@ -581,14 +753,14 @@ function TimingRow({ row }: { row: Row }) {
         <span>{row.driver.driver_number} · {row.driver.team_name}</span>
       </div>
       <div className={drs ? 'drs-cell open' : 'drs-cell'}>
-        <span>DRS</span>
+        <span>尾翼</span>
         <strong>{drs ? '开' : '关'}</strong>
       </div>
       <div className="telemetry-cell">
         <div className="rpm-ring">
           <strong>{car?.n_gear ?? '-'}</strong>
         </div>
-        <span>{car?.rpm ? Math.round(car.rpm) : '--'} rpm</span>
+        <span>{car?.rpm ? Math.round(car.rpm) : '--'} 转/分</span>
         <div className="pedals">
           <i className="throttle" style={{ width: `${car?.throttle ?? 0}%` }}></i>
           <i className="brake" style={{ width: `${car?.brake ?? 0}%` }}></i>
@@ -596,7 +768,7 @@ function TimingRow({ row }: { row: Row }) {
       </div>
       <div className="speed-cell">
         <strong>{car?.speed ? Math.round(car.speed) : '--'}</strong>
-        <span>km/h</span>
+        <span>公里/时</span>
       </div>
       <div className="lap-cell">
         <strong>{formatDelta(row.bestLap?.lap_duration)}</strong>
@@ -619,10 +791,11 @@ function TimingRow({ row }: { row: Row }) {
   )
 }
 
-function TrackMap({ rows }: { rows: Row[] }) {
-  const points = rows.filter((row) => row.location).map((row) => row.location as LocationData)
-  const xs = points.map((point) => point.x)
-  const ys = points.map((point) => point.y)
+function TrackMap({ rows, track }: { rows: Row[]; track: TrackTelemetry }) {
+  const livePoints = rows.filter((row) => row.location).map((row) => row.location as LocationData)
+  const mapPoints = [...track.cloud, ...track.segments.flat(), ...livePoints]
+  const xs = mapPoints.map((point) => point.x)
+  const ys = mapPoints.map((point) => point.y)
   const minX = Math.min(...xs, -1000)
   const maxX = Math.max(...xs, 1000)
   const minY = Math.min(...ys, -1000)
@@ -634,24 +807,47 @@ function TrackMap({ rows }: { rows: Row[] }) {
     return { x, y }
   }
 
+  function pathData(segment: LocationData[]) {
+    return segment
+      .map((point, index) => {
+        const pos = project(point)
+        return `${index === 0 ? 'M' : 'L'}${pos.x.toFixed(2)} ${pos.y.toFixed(2)}`
+      })
+      .join(' ')
+  }
+
+  const sampleWindow = track.from && track.to ? `${formatTime(track.from)}-${formatTime(track.to)}` : '等待坐标'
+
   return (
     <section className="side-panel map-panel">
       <div className="panel-head compact">
-        <span><MapIcon size={15} /> 赛道地图</span>
-        <small>{points.length} 个坐标</small>
+        <span><MapIcon size={15} /> 完整赛道坐标</span>
+        <small>{track.sourceCount || livePoints.length} 个原始点</small>
       </div>
       <svg viewBox="0 0 100 100" role="img" aria-label="赛道地图">
         <path className="map-grid" d="M8 18 H92 M8 38 H92 M8 58 H92 M8 78 H92 M20 8 V92 M40 8 V92 M60 8 V92 M80 8 V92" />
+        {track.cloud.map((point, index) => {
+          const pos = project(point)
+          return <circle className="track-cloud" cx={pos.x} cy={pos.y} r="0.18" key={`${point.driver_number}-${point.date}-${index}`} />
+        })}
+        {track.segments.map((segment, index) => (
+          <path className="track-ribbon" d={pathData(segment)} key={`segment-${index}`} />
+        ))}
         {rows.filter((row) => row.location).map((row) => {
           const pos = project(row.location as LocationData)
           return (
-            <g key={row.driver.driver_number} transform={`translate(${pos.x} ${pos.y})`}>
-              <circle r="2.4" fill={`#${row.driver.team_colour || 'e5e7eb'}`} />
+            <g className="car-marker" key={row.driver.driver_number} transform={`translate(${pos.x} ${pos.y})`}>
+              <circle r="2.7" fill={`#${row.driver.team_colour || 'e5e7eb'}`} />
               <text x="3.8" y="2.8">{row.driver.name_acronym}</text>
             </g>
           )
         })}
       </svg>
+      <div className="map-stats">
+        <span>采样窗 {sampleWindow}</span>
+        <span>轨迹车号 {track.driverNumber ?? '--'}</span>
+        <span>渲染点 {track.sampledCount || livePoints.length}</span>
+      </div>
     </section>
   )
 }
@@ -667,7 +863,7 @@ function WeatherPanel({ weather }: { weather?: Weather }) {
         <Metric label="气温" value={weather ? `${weather.air_temperature.toFixed(1)}℃` : '--'} />
         <Metric label="赛道温度" value={weather ? `${weather.track_temperature.toFixed(1)}℃` : '--'} />
         <Metric label="湿度" value={weather ? `${weather.humidity.toFixed(0)}%` : '--'} />
-        <Metric label="风速" value={weather ? `${weather.wind_speed.toFixed(1)} m/s` : '--'} />
+        <Metric label="风速" value={weather ? `${weather.wind_speed.toFixed(1)} 米/秒` : '--'} />
       </div>
     </section>
   )
@@ -759,7 +955,7 @@ function TyrePanel({ rows }: { rows: Row[] }) {
         {rows.slice(0, 12).map((row) => (
           <div key={row.driver.driver_number} style={{ '--team': `#${row.driver.team_colour || '6b7280'}` } as CSSProperties}>
             <strong>{row.driver.name_acronym}</strong>
-            <span>{row.stint?.compound ?? '--'}</span>
+            <span>{compoundLabel(row.stint?.compound)}</span>
             <small>起始胎龄 {row.stint?.tyre_age_at_start ?? '--'}</small>
           </div>
         ))}
