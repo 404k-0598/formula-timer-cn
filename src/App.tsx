@@ -18,6 +18,8 @@ import {
 import './App.css'
 
 const API = 'https://api.openf1.org/v1'
+const DEFAULT_LIVE_API = 'https://formula-timer-cn-live.onrender.com'
+const LIVE_API = ((import.meta.env.VITE_LIVE_API_URL as string | undefined) || DEFAULT_LIVE_API).replace(/\/$/, '')
 const CURRENT_YEAR = new Date().getUTCFullYear()
 const REFRESH_MS = 30000
 const API_STEP_MS = 1000
@@ -161,6 +163,7 @@ type DashboardState = {
   weather?: Weather
   updatedAt?: string
   error?: string
+  sourceLabel?: string
 }
 
 class OpenF1ApiError extends Error {
@@ -522,6 +525,34 @@ async function loadTrackTelemetry(session: Session, mode: 'live' | 'replay') {
   return track
 }
 
+function normalizeProxyState(payload: Partial<DashboardState>): DashboardState {
+  return {
+    ...initialState,
+    ...payload,
+    mode: payload.mode ?? (payload.rows?.length ? 'live' : 'restricted'),
+    rows: payload.rows ?? [],
+    locations: payload.locations ?? [],
+    track: payload.track ?? initialState.track,
+    raceControl: payload.raceControl ?? [],
+    teamRadio: payload.teamRadio ?? [],
+    updatedAt: payload.updatedAt ?? new Date().toISOString(),
+    sourceLabel: payload.sourceLabel ?? 'F1 官方 Live Timing 代理',
+  }
+}
+
+async function loadLiveProxyDashboard() {
+  try {
+    const response = await fetch(`${LIVE_API}/api/live`, { cache: 'no-store' })
+    if (!response.ok) return undefined
+    const payload = await response.json() as Partial<DashboardState>
+    const state = normalizeProxyState(payload)
+    if (state.rows.length || state.dataSession || state.sourceLabel) return state
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
 function chooseSessions(sessions: Session[], now = new Date()) {
   const sorted = [...sessions].sort((a, b) => new Date(a.date_start).getTime() - new Date(b.date_start).getTime())
   const active = sorted.find((session) => {
@@ -535,6 +566,9 @@ function chooseSessions(sessions: Session[], now = new Date()) {
 }
 
 async function loadDashboard(): Promise<DashboardState> {
+  const liveProxy = await loadLiveProxyDashboard()
+  if (liveProxy?.rows.length || liveProxy?.dataSession) return liveProxy
+
   const sessions = await fetchJson<Session[]>('sessions', { year: CURRENT_YEAR })
   const { active, next, latestPast } = chooseSessions(sessions)
   const dataSession = active ?? latestPast
@@ -647,6 +681,19 @@ function useDashboard() {
     return () => window.clearInterval(id)
   }, [refresh])
 
+  useEffect(() => {
+    const events = new EventSource(`${LIVE_API}/api/events`)
+    events.onmessage = (event) => {
+      try {
+        const next = normalizeProxyState(JSON.parse(event.data) as Partial<DashboardState>)
+        if (next.rows.length || next.dataSession) setState(next)
+      } catch {
+        // Ignore malformed keepalive or transient proxy frames.
+      }
+    }
+    return () => events.close()
+  }, [])
+
   return { state, refresh }
 }
 
@@ -683,7 +730,7 @@ function App() {
           <div className="brand-mark">FT</div>
           <div>
             <h1>方程式实时计时</h1>
-            <span>OpenF1 实时遥测中文看板</span>
+            <span>{state.sourceLabel ?? 'OpenF1 实时遥测中文看板'}</span>
           </div>
         </div>
         <div className="session-pill">
@@ -698,7 +745,7 @@ function App() {
       </header>
 
       <section className="status-grid">
-        <StatusCard label="数据状态" value={statusLabel(state.mode)} detail={state.error ?? 'OpenF1 公共 API'} accent="red" />
+        <StatusCard label="数据状态" value={statusLabel(state.mode)} detail={state.error ?? state.sourceLabel ?? 'OpenF1 公共 API'} accent="red" />
         <StatusCard label="目标会话" value={shortSessionName(state.targetSession)} detail={countdown || '实时轮询中'} accent="amber" />
         <StatusCard label="数据会话" value={shortSessionName(state.dataSession)} detail={state.dataSession?.circuit_short_name ?? '--'} accent="blue" />
         <StatusCard label="最后更新" value={formatTime(state.updatedAt)} detail={`刷新间隔 ${REFRESH_MS / 1000}s`} accent="green" />
