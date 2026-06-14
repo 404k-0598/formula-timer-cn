@@ -1,11 +1,7 @@
 .app-shell {
   min-height: 100vh;
-  color: #f4f7fb;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    #050608;
-  background-size: 36px 36px;
+  color: #eef1f4;
+  background: #050607;
 }
 
 .topbar,
@@ -26,11 +22,10 @@
   z-index: 10;
   justify-content: space-between;
   gap: 14px;
-  min-height: 58px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #242832;
-  background: rgba(10, 12, 16, 0.94);
-  backdrop-filter: blur(12px);
+  min-height: 52px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #1d2025;
+  background: #090a0d;
 }
 
 .brand {
@@ -41,9 +36,9 @@
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 7px;
+  width: 34px;
+  height: 34px;
+  border-radius: 2px;
   background: #e10600;
   color: #fff;
   font-family: var(--font-display);
@@ -77,7 +72,7 @@
 .tyre-grid small {
   color: #9aa3b2;
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -85,11 +80,11 @@
   justify-content: center;
   gap: 9px;
   min-width: 0;
-  height: 38px;
-  padding: 0 12px;
-  border: 1px solid #2f3542;
-  border-radius: 999px;
-  background: #11151d;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #2a2d33;
+  border-radius: 2px;
+  background: #0d0f13;
 }
 
 .session-pill strong {
@@ -100,20 +95,20 @@
 }
 
 .session-pill span {
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: rgba(225, 6, 0, 0.18);
-  color: #ff5a52;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: #1e0b0a;
+  color: #f05248;
   font-size: 12px;
 }
 
 .refresh-button {
   gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid #2f3542;
-  border-radius: 8px;
-  background: #151a23;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #2a2d33;
+  border-radius: 2px;
+  background: #0d0f13;
   color: #fff;
   cursor: pointer;
 }
@@ -125,31 +120,32 @@
 .status-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 1px;
+  padding: 10px 14px;
+  background: #050607;
 }
 
 .status-card,
 .main-panel,
 .side-panel,
 .analysis-panel {
-  border: 1px solid #242832;
-  border-radius: 8px;
-  background: rgba(14, 17, 23, 0.92);
+  border: 1px solid #22252b;
+  border-radius: 2px;
+  background: #0b0d10;
 }
 
 .status-card {
   display: grid;
-  gap: 5px;
-  min-height: 86px;
-  padding: 13px;
-  border-left: 3px solid var(--accent);
+  gap: 4px;
+  min-height: 76px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
 }
 
 .status-card strong {
   color: #fff;
   font-family: var(--font-display);
-  font-size: 23px;
+  font-size: 21px;
   line-height: 1;
 }
 
@@ -171,9 +167,9 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 12px;
-  padding: 0 16px 12px;
+  grid-template-columns: minmax(0, 1fr) 352px;
+  gap: 8px;
+  padding: 0 14px 8px;
 }
 
 .main-panel,
@@ -185,16 +181,16 @@
 .panel-head {
   justify-content: space-between;
   gap: 12px;
-  min-height: 52px;
-  padding: 10px 12px;
-  border-bottom: 1px solid #242832;
-  background: #10141c;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #22252b;
+  background: #0f1115;
 }
 
 .panel-head h2 {
   margin: 2px 0 0;
   color: #fff;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .panel-actions {
@@ -208,41 +204,47 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 27px;
-  padding: 0 8px;
-  border: 1px solid #2f3542;
-  border-radius: 999px;
-  background: #0b0e14;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid #2a2d33;
+  border-radius: 2px;
+  background: #090a0d;
 }
 
 .timing-table {
   display: grid;
-  gap: 4px;
-  padding: 10px;
+  gap: 1px;
+  padding: 0;
   overflow-x: auto;
+  background: #191c22;
 }
 
 .table-head,
 .timing-row {
   display: grid;
   grid-template-columns: 48px minmax(150px, 1fr) 58px 118px 74px 124px 78px minmax(124px, 0.7fr) 48px;
-  gap: 7px;
+  gap: 6px;
   align-items: center;
   min-width: 1030px;
 }
 
 .table-head {
-  min-height: 28px;
-  padding: 0 9px;
+  min-height: 30px;
+  padding: 0 10px;
+  background: #111318;
 }
 
 .timing-row {
-  min-height: 56px;
-  padding: 6px 9px;
-  border: 1px solid #222834;
-  border-left: 4px solid var(--team);
-  border-radius: 6px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--team) 14%, #0a0d13), #0a0d13 58%);
+  min-height: 54px;
+  padding: 6px 10px;
+  border: 0;
+  border-left: 3px solid var(--team);
+  border-radius: 0;
+  background: #0b0d10;
+}
+
+.timing-row:nth-child(even) {
+  background: #0e1014;
 }
 
 .pos-cell {
@@ -262,7 +264,7 @@
 .driver-cell strong {
   display: block;
   color: #fff;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .driver-cell span {
@@ -275,15 +277,15 @@
 .drs-cell {
   display: grid;
   place-items: center;
-  min-height: 38px;
-  border: 1px solid #303746;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  min-height: 34px;
+  border: 1px solid #2b2f36;
+  border-radius: 2px;
+  background: #101217;
 }
 
 .drs-cell.open {
-  border-color: rgba(244, 197, 66, 0.7);
-  background: rgba(244, 197, 66, 0.14);
+  border-color: #b99220;
+  background: #171304;
 }
 
 .drs-cell strong {
@@ -296,18 +298,26 @@
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 5px 9px;
   align-items: center;
+  min-width: 0;
+}
+
+.telemetry-cell > span,
+.pedals {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rpm-ring {
   grid-row: span 2;
   display: grid;
   place-items: center;
-  width: 39px;
-  height: 39px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, #0a0d13 0 49%, transparent 50%),
-    conic-gradient(#e10600 var(--rpm), rgba(255, 255, 255, 0.14) 0);
+  width: 36px;
+  height: 36px;
+  border: 1px solid #363a42;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #e10600 var(--rpm), #101217 0);
 }
 
 .rpm-ring strong {
@@ -322,8 +332,9 @@
 
 .pedals i {
   display: block;
+  max-width: 100%;
   height: 5px;
-  border-radius: 999px;
+  border-radius: 1px;
 }
 
 .pedals .throttle {
@@ -338,7 +349,7 @@
   display: block;
   color: #fff;
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
 }
 
@@ -363,7 +374,7 @@
 
 .sector-strip i {
   height: 12px;
-  border-radius: 2px;
+  border-radius: 1px;
   background: #3b4351;
 }
 
@@ -386,11 +397,11 @@
 .tyre {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border: 2px solid #e5e7eb;
   border-radius: 50%;
-  background: #07090d;
+  background: #08090b;
 }
 
 .tyre strong {
@@ -420,7 +431,7 @@
 
 .side-column {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
 }
 
@@ -438,31 +449,25 @@
   display: block;
   width: 100%;
   height: 320px;
-  background:
-    linear-gradient(90deg, rgba(51, 168, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(51, 168, 255, 0.06) 1px, transparent 1px),
-    radial-gradient(circle at 50% 48%, rgba(51, 168, 255, 0.13), transparent 35%),
-    #06080c;
-  background-size: 36px 36px, 36px 36px, auto, auto;
+  background: #07080a;
 }
 
 .map-grid {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.08);
-  stroke-width: 0.4;
+  stroke: rgba(255, 255, 255, 0.035);
+  stroke-width: 0.35;
 }
 
 .track-cloud {
-  fill: rgba(51, 168, 255, 0.32);
+  fill: rgba(160, 169, 181, 0.28);
 }
 
 .track-ribbon {
   fill: none;
-  stroke: rgba(244, 247, 251, 0.82);
+  stroke: rgba(238, 241, 244, 0.78);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.1;
-  filter: drop-shadow(0 0 3px rgba(51, 168, 255, 0.42));
+  stroke-width: 1;
 }
 
 .car-marker circle {
@@ -480,14 +485,16 @@
 .map-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  padding: 8px 10px 10px;
-  border-top: 1px solid #242832;
-  background: #090c12;
+  gap: 1px;
+  padding: 0;
+  border-top: 1px solid #22252b;
+  background: #191c22;
 }
 
 .map-stats span {
   overflow: hidden;
+  padding: 7px 8px;
+  background: #0b0d10;
   color: #9aa3b2;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -498,17 +505,18 @@
 .weather-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px;
+  gap: 1px;
+  padding: 0;
+  background: #191c22;
 }
 
 .weather-grid div {
   display: grid;
   gap: 3px;
   padding: 10px;
-  border: 1px solid #242832;
-  border-radius: 6px;
-  background: #090c12;
+  border: 0;
+  border-radius: 0;
+  background: #0b0d10;
 }
 
 .weather-grid strong {
@@ -519,10 +527,11 @@
 .message-list,
 .radio-list {
   display: grid;
-  gap: 7px;
+  gap: 1px;
   max-height: 252px;
   overflow: auto;
-  padding: 10px;
+  padding: 0;
+  background: #191c22;
 }
 
 .message-list article {
@@ -531,11 +540,11 @@
   gap: 8px;
   align-items: center;
   min-height: 38px;
-  padding: 7px;
-  border: 1px solid #242832;
-  border-left: 3px solid #e10600;
-  border-radius: 6px;
-  background: #090c12;
+  padding: 7px 8px;
+  border: 0;
+  border-left: 2px solid #e10600;
+  border-radius: 0;
+  background: #0b0d10;
 }
 
 .message-list strong {
@@ -556,9 +565,9 @@
   gap: 8px;
   min-height: 36px;
   padding: 7px 8px;
-  border: 1px solid #242832;
-  border-radius: 6px;
-  background: #090c12;
+  border: 0;
+  border-radius: 0;
+  background: #0b0d10;
   color: inherit;
   text-decoration: none;
 }
@@ -570,13 +579,13 @@
 .analysis-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
-  gap: 12px;
-  padding: 0 16px 16px;
+  gap: 8px;
+  padding: 0 14px 14px;
 }
 
 .lap-bars,
 .tyre-grid {
-  padding: 10px;
+  padding: 8px;
 }
 
 .lap-bars {
@@ -600,8 +609,8 @@
 
 .lap-bars i {
   height: 9px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #e10600, #f4c542);
+  border-radius: 1px;
+  background: #e10600;
 }
 
 .tyre-grid {
@@ -614,10 +623,10 @@
   display: grid;
   gap: 2px;
   padding: 8px;
-  border: 1px solid #242832;
-  border-left: 3px solid var(--team);
-  border-radius: 6px;
-  background: #090c12;
+  border: 1px solid #22252b;
+  border-left: 2px solid var(--team);
+  border-radius: 2px;
+  background: #0b0d10;
 }
 
 .tyre-grid strong {
@@ -654,10 +663,6 @@
 }
 
 @media (max-width: 760px) {
-  .app-shell {
-    background-size: 28px 28px;
-  }
-
   .topbar {
     align-items: flex-start;
     flex-direction: column;
@@ -672,7 +677,7 @@
   .brand-mark {
     width: 32px;
     height: 32px;
-    border-radius: 6px;
+    border-radius: 2px;
     font-size: 13px;
   }
 
@@ -713,11 +718,8 @@
   }
 
   .side-column {
-    order: -1;
-  }
-
-  .side-column {
     grid-template-columns: 1fr;
+    order: -1;
   }
 
   .panel-actions {
@@ -805,7 +807,8 @@
   .telemetry-cell {
     grid-column: 2 / 5;
     grid-row: 2;
-    grid-template-columns: 36px minmax(0, 58px) minmax(72px, 1fr);
+    grid-template-columns: 34px minmax(0, 64px) minmax(0, 1fr);
+    gap: 4px 7px;
   }
 
   .rpm-ring {
@@ -853,10 +856,6 @@
 }
 
 @media (max-width: 520px) {
-  .status-grid {
-    grid-template-columns: 1fr;
-  }
-
   .brand h1 {
     font-size: 17px;
   }
@@ -866,7 +865,7 @@
   }
 
   .status-grid {
-    gap: 8px;
+    gap: 1px;
   }
 
   .map-panel > svg {
@@ -875,6 +874,12 @@
 
   .weather-grid,
   .tyre-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 360px) {
+  .status-grid {
     grid-template-columns: 1fr;
   }
 }
