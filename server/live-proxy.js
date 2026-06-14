@@ -145,13 +145,13 @@ async function loadFallbackTrack(info) {
     const stream = await fetch(`${F1_BASE}/static/${sourceSession.Path}Position.z.jsonStream`).then((response) => response.ok ? response.text() : '')
     const points = []
     for (const [index, line] of stream.replace(/^\uFEFF/, '').split('\n').entries()) {
-      if (!line || index % 20 !== 0) continue
+      if (!line || index % 5 !== 0) continue
       const match = line.match(/^[^"]+"([^"]+)"/)
       if (!match) continue
       const decoded = decodeCompressedFeed(match[1])
       points.push(...extractPositions(decoded).filter((point) => point.x !== 0 || point.y !== 0))
     }
-    fallbackTrackPoints = points.slice(-3500)
+    fallbackTrackPoints = points.slice(-12000)
   } catch (error) {
     lastError = error instanceof Error ? error.message : String(error)
   } finally {
@@ -172,6 +172,65 @@ function parseLapTime(value) {
 function numberValue(value) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : undefined
+}
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function simplifyPath(points, minStep = 70, maxPoints = 360) {
+  const simplified = []
+  for (const point of points) {
+    const previous = simplified.at(-1)
+    if (!previous || distance(previous, point) >= minStep) simplified.push(point)
+  }
+
+  const source = simplified.length >= 3 ? simplified : points
+  if (source.length <= maxPoints) return source
+  const stride = Math.ceil(source.length / maxPoints)
+  return source.filter((_, index) => index % stride === 0)
+}
+
+function buildTrackSegments(points) {
+  const byDriver = new Map()
+  for (const point of points) {
+    const bucket = byDriver.get(point.driver_number) ?? []
+    bucket.push(point)
+    byDriver.set(point.driver_number, bucket)
+  }
+
+  let selectedDriver
+  let selectedPoints = []
+  let bestScore = Number.NEGATIVE_INFINITY
+
+  for (const [driverNumber, driverPoints] of byDriver) {
+    const sorted = [...driverPoints].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    const nonZero = sorted.filter((point) => point.x !== 0 || point.y !== 0)
+    if (nonZero.length < 8) continue
+    const xs = nonZero.map((point) => point.x)
+    const ys = nonZero.map((point) => point.y)
+    const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))
+    const score = nonZero.length + area / 15000
+    if (score > bestScore) {
+      bestScore = score
+      selectedDriver = Number(driverNumber)
+      selectedPoints = nonZero
+    }
+  }
+
+  const segments = []
+  let segment = []
+  for (const point of selectedPoints) {
+    const previous = segment.at(-1)
+    if (previous && distance(previous, point) > 6000) {
+      if (segment.length >= 3) segments.push(simplifyPath(segment))
+      segment = []
+    }
+    segment.push(point)
+  }
+  if (segment.length >= 3) segments.push(simplifyPath(segment))
+
+  return { segments, selectedDriver }
 }
 
 function utcFromLocal(value, offsetValue = '00:00:00') {
@@ -235,6 +294,7 @@ function latestLocation(driverNumber) {
 
 function trackTelemetry() {
   const source = positionHistory.length ? positionHistory : fallbackTrackPoints
+  const clean = source.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && (point.x !== 0 || point.y !== 0))
   const latest = []
   const seen = new Set()
   for (let index = positionHistory.length - 1; index >= 0; index -= 1) {
@@ -243,16 +303,17 @@ function trackTelemetry() {
     seen.add(point.driver_number)
     latest.push(point)
   }
-  const stride = Math.max(1, Math.ceil(source.length / 900))
+  const stride = Math.max(1, Math.ceil(clean.length / 900))
+  const { segments, selectedDriver } = buildTrackSegments(clean)
   return {
-    cloud: source.filter((_, index) => index % stride === 0),
-    segments: [],
+    cloud: clean.filter((_, index) => index % stride === 0),
+    segments,
     latest,
-    sourceCount: source.length,
-    sampledCount: Math.ceil(source.length / stride),
-    driverNumber: fallbackTrackPath ? 0 : undefined,
-    from: source[0]?.date,
-    to: source.at(-1)?.date,
+    sourceCount: clean.length,
+    sampledCount: Math.ceil(clean.length / stride) + segments.reduce((sum, segment) => sum + segment.length, 0),
+    driverNumber: selectedDriver,
+    from: clean[0]?.date,
+    to: clean.at(-1)?.date,
   }
 }
 
