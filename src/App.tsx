@@ -19,7 +19,7 @@ import './App.css'
 const API = 'https://api.openf1.org/v1'
 const CURRENT_YEAR = new Date().getUTCFullYear()
 const REFRESH_MS = 30000
-const API_STEP_MS = 700
+const API_STEP_MS = 1000
 const TRACK_SAMPLE_MS = 120000
 const TRACK_CACHE_VERSION = 'track-v4'
 
@@ -188,8 +188,8 @@ function endpoint(path: string, params: Record<string, string | number | undefin
 
 async function fetchJson<T>(path: string, params: Record<string, string | number | undefined>, attempt = 0): Promise<T> {
   const response = await fetch(endpoint(path, params))
-  if (response.status === 429 && attempt < 1) {
-    await wait(1400)
+  if (response.status === 429 && attempt < 2) {
+    await wait(2500 * (attempt + 1))
     return fetchJson<T>(path, params, attempt + 1)
   }
   if (!response.ok) throw new Error(`${path} ${response.status}`)
